@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronLeft, Users, Building2, ClipboardList, Factory, Truck, LogOut, LayoutDashboard } from 'lucide-react';
+import { ChevronLeft, Users, Building2, ClipboardList, Factory, Truck, LogOut, LayoutDashboard,ArrowsUpFromLine,PrinterCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 
@@ -28,7 +28,9 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }: SidebarProps) => {
     { name: 'Clienti', icon: Building2, href: '/clienti' },
     { name: 'Ordini', icon: ClipboardList, href: '/ordini' },
     { name: 'Produzione', icon: Factory, href: '/produzione' },
-    { name: 'Carichi', icon: Truck, href: '/carichi' }
+    { name: 'Carichi', icon: Truck, href: '/carichi' },
+    { name: 'Carichi del giorno', icon: ArrowsUpFromLine, href: '/carichidelgiorno' },
+    { name: 'DDT', icon: PrinterCheck, href: '/ddt' }
   ];
 
   const collaboratorNavItems: NavItem[] = [

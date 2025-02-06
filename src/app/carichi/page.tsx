@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { format, parseISO } from 'date-fns'
 import { it } from 'date-fns/locale'
-import { Check, Trash2, Plus, Calendar as CalendarIcon } from 'lucide-react'
+import { BookOpenCheck, CheckCheck, Trash2, Calendar as CalendarIcon, Ungroup } from 'lucide-react'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils"
 import { supabase } from '@/lib/supabase'
 import debounce from 'lodash/debounce'
+import GroupDialog from './GroupDialog'
 
 interface Consegna {
   data: string
@@ -24,7 +25,9 @@ interface Consegna {
 }
 
 interface CaricoDB {
+  stato: 'consegna' | 'pronto_consegna' | 'ddt' | 'completato'
   id: number
+  codice_raggruppamento: string | null
   body: {
     quantity: number
     deliveryDate: string
@@ -52,6 +55,7 @@ interface CaricoDB {
 }
 
 interface Carico {
+  stato: 'consegna' | 'pronto_consegna' | 'completato' | 'ddt'
   orderNumber: string
   cliente: string
   prodotto: string
@@ -62,7 +66,8 @@ interface Carico {
   consegne: Consegna[]
   note: string
   linkId: number
-  body?: {
+  codice_raggruppamento: string | null
+  body: {
     quantity: number
     deliveryDate: string
     note?: string
@@ -75,7 +80,6 @@ interface Carico {
 }
 
 export default function CarichiComponent() {
-  
   const [carichi, setCarichi] = useState<Carico[]>([])
   const [date, setDate] = useState<Date>(new Date())
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -93,6 +97,8 @@ export default function CarichiComponent() {
         .select(`
           id,
           body,
+          stato,
+          codice_raggruppamento,
           ordini (
             id,
             order_number,
@@ -105,7 +111,7 @@ export default function CarichiComponent() {
             body
           )
         `)
-        .eq('stato', 'consegna') as { data: CaricoDB[] | null, error: unknown }
+        .in('stato', ['consegna', 'pronto_consegna']) as { data: CaricoDB[] | null, error: unknown }
 
       if (error) throw error
 
@@ -123,6 +129,7 @@ export default function CarichiComponent() {
                  item?.ordini?.order_number
         })
         .map(item => ({
+          stato: item.stato,
           orderNumber: item.ordini.order_number,
           cliente: item.ordini.client.ragione_sociale,
           prodotto: item.client_products.name,
@@ -133,6 +140,7 @@ export default function CarichiComponent() {
           consegne: item.body.consegne || [],
           note: item.body.note || '',
           linkId: item.id,
+          codice_raggruppamento: item.codice_raggruppamento,
           body: item.body
         }))
 
@@ -142,6 +150,110 @@ export default function CarichiComponent() {
       setError('Errore nel caricamento dei carichi')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const toggleProntoConsegna = async (linkId: number) => {
+    try {
+      const carico = carichi.find(c => c.linkId === linkId)
+      if (!carico) return
+
+      const nuovoStato = carico.stato === 'pronto_consegna' ? 'consegna' : 'pronto_consegna'
+
+      const { error } = await supabase
+        .from('link_ordini_client_products')
+        .update({ stato: nuovoStato })
+        .eq('id', linkId)
+
+      if (error) throw error
+
+      setCarichi(carichi.map(c => 
+        c.linkId === linkId ? { ...c, stato: nuovoStato } : c
+      ))
+
+      toast({
+        title: nuovoStato === 'pronto_consegna' ? "Carico pronto per la consegna" : "Carico in lavorazione",
+        description: `Il carico ${carico.orderNumber} è stato ${nuovoStato === 'pronto_consegna' ? 'marcato come pronto' : 'rimesso in lavorazione'}`,
+      })
+    } catch (err) {
+      console.error('Error updating delivery status:', err)
+      toast({
+        title: "Errore",
+        description: "Impossibile aggiornare lo stato del carico",
+      })
+    }
+  }
+
+  const raggruppaCarichi = async (selectedIds: number[]) => {
+    try {
+      const timestamp = new Date().toISOString()
+      const firstCarico = carichi.find(c => c.linkId === selectedIds[0])
+      if (!firstCarico) return
+  
+      // Execute all updates and collect results
+      const results = await Promise.all(
+        selectedIds.map(async (id) => {
+          const carico = carichi.find(c => c.linkId === id)
+          if (!carico) return null
+  
+          const { error } = await supabase
+            .from('link_ordini_client_products')
+            .update({ 
+              codice_raggruppamento: timestamp,
+              stato: firstCarico.stato,
+              body: {
+                ...carico.body,              // Mantiene tutto il body originale
+                deliveryDate: firstCarico.dataConsegna  // Aggiorna solo la data
+              }
+            })
+            .eq('id', id)
+          
+          return error
+        })
+      )
+  
+      // Check if any of the operations resulted in an error
+      const errors = results.filter(error => error !== null)
+      if (errors.length > 0) {
+        throw new Error('One or more updates failed')
+      }
+  
+      await fetchCarichi()
+  
+      toast({
+        title: "Carichi raggruppati",
+        description: `${selectedIds.length} carichi sono stati raggruppati con successo`,
+      })
+    } catch (err) {
+      console.error('Error grouping deliveries:', err)
+      toast({
+        title: "Errore",
+        description: "Impossibile raggruppare i carichi",
+      })
+    }
+  }
+
+  const rimuoviRaggruppamento = async (codiceRaggruppamento: string) => {
+    try {
+      const { error } = await supabase
+        .from('link_ordini_client_products')
+        .update({ codice_raggruppamento: null })
+        .eq('codice_raggruppamento', codiceRaggruppamento)
+
+      if (error) throw error
+
+      await fetchCarichi()
+
+      toast({
+        title: "Raggruppamento rimosso",
+        description: "I carichi sono stati separati con successo",
+      })
+    } catch (err) {
+      console.error('Error removing group:', err)
+      toast({
+        title: "Errore",
+        description: "Impossibile rimuovere il raggruppamento",
+      })
     }
   }
 
@@ -169,27 +281,6 @@ export default function CarichiComponent() {
     }, 500),
     [] 
   )
-
-  useEffect(() => {
-    return () => {
-      debouncedUpdate.cancel()
-    }
-  }, [debouncedUpdate])
-
-  useEffect(() => {
-    fetchCarichi()
-  }, [])
-
-  const apriDialog = (id: number) => {
-    setCaricoSelezionato(id)
-    setDialogOpen(true)
-  }
-
-  const chiudiDialog = () => {
-    setDialogOpen(false)
-    setCaricoSelezionato(null)
-    setDate(new Date())
-  }
 
   const aggiornaDataConsegna = async (linkId: number, nuovaData: string) => {
     try {
@@ -220,86 +311,14 @@ export default function CarichiComponent() {
     }
   }
 
-  
-  const aggiungiConsegna = async (linkId: number, nuovaConsegna: Consegna) => {
-    try {
-      const carico = carichi.find(c => c.linkId === linkId)
-      if (!carico) return
-
-      const updatedBody = {
-        ...carico.body,
-        consegne: [...(carico.body?.consegne || []), nuovaConsegna]
-      }
-
-      const { error } = await supabase
-        .from('link_ordini_client_products')
-        .update({ body: updatedBody })
-        .eq('id', linkId)
-
-      if (error) throw error
-
-      setCarichi(carichi.map(carico => 
-        carico.linkId === linkId ? { ...carico, consegne: [...carico.consegne, nuovaConsegna] } : carico
-      ))
-
-      toast({
-        title: "Consegna registrata",
-        description: `Consegna del ${format(parseISO(nuovaConsegna.data), 'dd/MM/yyyy', { locale: it })}${nuovaConsegna.note ? ` - Note: ${nuovaConsegna.note}` : ''}`,
-      })
-      chiudiDialog()
-    } catch (err) {
-      console.error('Error adding delivery:', err)
-      toast({
-        title: "Errore",
-        description: "Impossibile registrare la consegna",
-      })
-    }
-  }
-
-  const eliminaConsegna = async (linkId: number, indexConsegna: number) => {
+  const confermaCarico = async (linkId: number, isGrouped = false) => {
     try {
       const carico = carichi.find(c => c.linkId === linkId)
       if (!carico) return
   
-      const nuoveConsegne = carico.consegne.filter((_, index) => index !== indexConsegna)
-      
-      const updatedBody = {
-        ...carico.body,
-        consegne: nuoveConsegne
-      }
-  
-      const { error } = await supabase
-        .from('link_ordini_client_products')
-        .update({ body: updatedBody })
-        .eq('id', linkId)
-  
-      if (error) throw error
-  
-      setCarichi(carichi.map(carico => 
-        carico.linkId === linkId ? { ...carico, consegne: nuoveConsegne } : carico
-      ))
-  
-      toast({
-        title: "Consegna eliminata",
-        description: "La consegna è stata eliminata con successo",
-      })
-    } catch (err) {
-      console.error('Error deleting delivery:', err)
-      toast({
-        title: "Errore",
-        description: "Impossibile eliminare la consegna",
-      })
-    }
-  }
-
-  const confermaCarico = async (linkId: number) => {
-    try {
-      const carico = carichi.find(c => c.linkId === linkId)
-      if (!carico) return
-
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('User not authenticated')
-
+  
       const updatedBody = {
         ...carico.body,
         completedAt: {
@@ -307,23 +326,50 @@ export default function CarichiComponent() {
           user: user.email || user.id
         }
       }
-
-      const { error } = await supabase
-        .from('link_ordini_client_products')
-        .update({ 
-          stato: 'completato',
-          body: updatedBody
+  
+      if (isGrouped && carico.codice_raggruppamento) {
+        // Se è un gruppo, aggiorna tutti i carichi del gruppo
+        const carichiGruppo = carichi.filter(c => c.codice_raggruppamento === carico.codice_raggruppamento)
+        
+        await Promise.all(carichiGruppo.map(c => 
+          supabase
+            .from('link_ordini_client_products')
+            .update({ 
+              stato: 'ddt',
+              body: {
+                ...c.body,
+                completedAt: updatedBody.completedAt
+              }
+            })
+            .eq('id', c.linkId)
+        ))
+  
+        // Aggiorna lo stato UI rimuovendo tutti i carichi del gruppo
+        setCarichi(carichi.filter(c => c.codice_raggruppamento !== carico.codice_raggruppamento))
+        
+        toast({
+          title: "Carichi completati",
+          description: `${carichiGruppo.length} carichi sono stati completati`,
         })
-        .eq('id', linkId)
-
-      if (error) throw error
-
-      setCarichi(carichi.filter(carico => carico.linkId !== linkId))
-      
-      toast({
-        title: "Carico completato",
-        description: `Il carico ${carico.orderNumber} è stato completato`,
-      })
+      } else {
+        // Gestione singolo carico
+        const { error } = await supabase
+          .from('link_ordini_client_products')
+          .update({ 
+            stato: 'ddt',
+            body: updatedBody
+          })
+          .eq('id', linkId)
+  
+        if (error) throw error
+  
+        setCarichi(carichi.filter(c => c.linkId !== linkId))
+        
+        toast({
+          title: "Carico completato",
+          description: `Il carico ${carico.orderNumber} è stato completato`,
+        })
+      }
     } catch (err) {
       console.error('Error confirming delivery:', err)
       toast({
@@ -333,9 +379,59 @@ export default function CarichiComponent() {
     }
   }
 
+  const isFirstInGroup = (currentCarico: Carico, index: number) => {
+    if (!currentCarico.codice_raggruppamento) return false;
+    return index === 0 || carichiOrdinati[index - 1].codice_raggruppamento !== currentCarico.codice_raggruppamento;
+  }
+
+  const isLastInGroup = (currentCarico: Carico, index: number) => {
+    if (!currentCarico.codice_raggruppamento) return false;
+    return index === carichiOrdinati.length - 1 || carichiOrdinati[index + 1].codice_raggruppamento !== currentCarico.codice_raggruppamento;
+  }
+
   const carichiOrdinati = useMemo(() => {
-    return [...carichi].sort((a, b) => new Date(a.dataConsegna).getTime() - new Date(b.dataConsegna).getTime())
+    // Group carichi by codice_raggruppamento
+    const grouped = carichi.reduce((acc, carico) => {
+      if (!carico.codice_raggruppamento) {
+        acc.ungrouped.push(carico)
+        return acc
+      }
+      
+      if (!acc.grouped[carico.codice_raggruppamento]) {
+        acc.grouped[carico.codice_raggruppamento] = []
+      }
+      acc.grouped[carico.codice_raggruppamento].push(carico)
+      return acc
+    }, { grouped: {} as Record<string, Carico[]>, ungrouped: [] as Carico[] })
+
+    // Sort ungrouped carichi
+    const sortedUngrouped = grouped.ungrouped
+      .filter(c => c.stato === 'consegna')
+      .sort((a, b) => new Date(a.dataConsegna).getTime() - new Date(b.dataConsegna).getTime())
+      .concat(
+        grouped.ungrouped
+          .filter(c => c.stato === 'pronto_consegna')
+          .sort((a, b) => new Date(a.dataConsegna).getTime() - new Date(b.dataConsegna).getTime())
+      )
+
+    // Sort and flatten grouped carichi
+    const sortedGrouped = Object.entries(grouped.grouped)
+      .map(([, group]) => group)
+      .sort((a, b) => new Date(a[0].dataConsegna).getTime() - new Date(b[0].dataConsegna).getTime())
+      .flat()
+
+    return [...sortedGrouped, ...sortedUngrouped]
   }, [carichi])
+
+  useEffect(() => {
+    return () => {
+      debouncedUpdate.cancel()
+    }
+  }, [debouncedUpdate])
+
+  useEffect(() => {
+    fetchCarichi()
+  }, [])
 
   if (isLoading) {
     return <div className="container mx-auto p-4">Caricamento...</div>
@@ -349,7 +445,9 @@ export default function CarichiComponent() {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Carichi</h1>
+        <GroupDialog carichi={carichi} onGroup={raggruppaCarichi} />
       </div>
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -362,111 +460,193 @@ export default function CarichiComponent() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {carichiOrdinati.map((carico) => (
-            <React.Fragment key={carico.linkId}>
-              <TableRow>
-                <TableCell className="font-bold text-lg">{carico.orderNumber}</TableCell>
-                <TableCell>{carico.cliente}</TableCell>
-                <TableCell>
-                  <div>{carico.prodotto}</div>
-                  <div className="text-sm text-gray-500">
-                    {carico.productDimensions} - {carico.heatTreated ? 'T' : 'NON T'}
-                  </div>
-                </TableCell>
-                <TableCell>{carico.quantita}</TableCell>
-                <TableCell>
-                  <Input
-                    type="date"
-                    value={carico.dataConsegna}
-                    onChange={(e) => aggiornaDataConsegna(carico.linkId, e.target.value)}
-                    className="w-40 mb-1"
-                  />
-                </TableCell>
-                <TableCell>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="outline" className="text-md">
-                        <Check className="mr-2 h-4 w-4" />
-                        Conferma
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Conferma carico</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Vuoi davvero confermare il carico {carico.orderNumber}?
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Annulla</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => confermaCarico(carico.linkId)}>
-                          Conferma
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell colSpan={6}>
-                <Textarea
-                  placeholder="Note"
-                  value={carico.note}
-                  onChange={(e) => {
-                    setCarichi(prevCarichi => prevCarichi.map(c => 
-                      c.linkId === carico.linkId ? { ...c, note: e.target.value } : c
-                    ))
-                    debouncedUpdate(carico.linkId, e.target.value, carico)
-                  }}
-                  className="w-full mb-2"
-                />
-                  <Button 
-                    variant="outline" 
-                    className="mb-2 bg-black text-white" 
-                    onClick={() => apriDialog(carico.linkId)}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Nuova consegna
-                  </Button>
-                  <div className="text-sm text-gray-600 mt-2">
-                    {carico.consegne.map((consegna, index) => (
-                      <div key={index} className="mb-1 flex items-center justify-start">
-                        <div>
-                        Consegna del {format(parseISO(consegna.data), 'dd/MM/yyyy', { locale: it })}.
-                        {consegna.note && ` Note: ${consegna.note}`}
-                        </div>
+          {carichiOrdinati.map((carico, index) => {
+            const isFirst = isFirstInGroup(carico, index);
+            const isLast = isLastInGroup(carico, index);
+            const isGrouped = !!carico.codice_raggruppamento;
+            //const showActions = !isGrouped || isFirst;
+
+            return (
+              <React.Fragment key={carico.linkId}>
+                <TableRow className={cn(
+                  'border-b-0',
+                  isGrouped && 'bg-gray-50',
+                  isFirst && 'border-t-2 border-t-gray-200',
+                  isLast && 'border-b-2 border-b-gray-200',
+                  !isGrouped && 'border-b border-b-gray-200'
+                )}>
+                  <TableCell>{carico.orderNumber}</TableCell>
+                  <TableCell className="font-bold text-lg">{carico.cliente}</TableCell>
+                  <TableCell>
+                    <div className="font-bold text-lg">{carico.prodotto}</div>
+                    <div className="text-sm text-gray-500">
+                      {carico.productDimensions} {carico.heatTreated ? '- HT' : ''}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-bold text-lg">{carico.quantita}</TableCell>
+                  <TableCell>
+                    {(!isGrouped || isFirst) && (
+                      <Input
+                        type="date"
+                        value={carico.dataConsegna}
+                        onChange={(e) => {
+                          if (isGrouped) {
+                            // Aggiorna tutti i carichi nel gruppo
+                            const groupCode = carico.codice_raggruppamento;
+                            carichiOrdinati
+                              .filter(c => c.codice_raggruppamento === groupCode)
+                              .forEach(c => aggiornaDataConsegna(c.linkId, e.target.value));
+                          } else {
+                            aggiornaDataConsegna(carico.linkId, e.target.value);
+                          }
+                        }}
+                        className="w-40 mb-1"
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {(!isGrouped || isFirst) && (
+                      <div className="flex space-x-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className={cn(
+                            "text-md",
+                            carico.stato === 'pronto_consegna' ? "bg-green-100 text-green-800 hover:bg-green-200" : ""
+                          )}
+                          onClick={() => {
+                            if (isGrouped) {
+                              // Aggiorna tutti i carichi nel gruppo
+                              const groupCode = carico.codice_raggruppamento;
+                              carichiOrdinati
+                                .filter(c => c.codice_raggruppamento === groupCode)
+                                .forEach(c => toggleProntoConsegna(c.linkId));
+                            } else {
+                              toggleProntoConsegna(carico.linkId);
+                            }
+                          }}
+                        >
+                          <BookOpenCheck className={cn(
+                            "mr-2 h-4 w-4",
+                            carico.stato === 'pronto_consegna' ? "text-green-800" : ""
+                          )} />
+                          {carico.stato === 'pronto_consegna' ? 'Pronto consegna!' : 'Pronto consegna'}
+                        </Button>
+
+                        {isGrouped && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="outline" className="text-md">
+                                <Ungroup className="mr-2 h-4 w-4" />
+                                Separa
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Separa carichi</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Vuoi davvero separare questi carichi raggruppati?
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Annulla</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => {rimuoviRaggruppamento(carico.codice_raggruppamento!); setCaricoSelezionato(carico.linkId)}}>
+                                  Separa
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <Trash2 className="h-4 w-4" />
+                            <Button size="sm" variant="outline" className="text-md">
+                              <CheckCheck className="mr-2 h-4 w-4" />
+                              Evadi
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Elimina consegna</AlertDialogTitle>
+                              <AlertDialogTitle>Conferma carico</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Vuoi davvero eliminare questa consegna?
+                                {isGrouped ? 
+                                  'Vuoi davvero evadere tutti i carichi raggruppati?' :
+                                  `Vuoi davvero evadere il carico ${carico.orderNumber}?`
+                                }
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Annulla</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => eliminaConsegna(carico.linkId, index)}>
-                                Elimina
+                              <AlertDialogAction onClick={() => {
+                                  if (isGrouped) {
+                                    confermaCarico(carico.linkId, true);
+                                  } else {
+                                    confermaCarico(carico.linkId);
+                                  }
+                                }}>
+                                Conferma
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
                       </div>
-                    ))}
-                  </div>
-                </TableCell>
-              </TableRow>
-            </React.Fragment>
-          ))}
+                    )}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={6} className={cn(
+                    isGrouped && 'bg-gray-50',
+                    isLast && 'border-b-2 border-b-gray-200'
+                  )}>
+                    <Textarea
+                      placeholder="Note"
+                      value={carico.note}
+                      onChange={(e) => {
+                        setCarichi(prevCarichi => prevCarichi.map(c => 
+                          c.linkId === carico.linkId ? { ...c, note: e.target.value } : c
+                        ))
+                        debouncedUpdate(carico.linkId, e.target.value, carico)
+                      }}
+                      className="w-full mb-2"
+                    />
+                    <div className="text-sm text-gray-600 mt-2">
+                      {carico.consegne.map((consegna, index) => (
+                        <div key={index} className="mb-1 flex items-center justify-start">
+                          <div>
+                            Consegna del {format(parseISO(consegna.data), 'dd/MM/yyyy', { locale: it })}.
+                            {consegna.note && ` Note: ${consegna.note}`}
+                          </div>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Elimina consegna</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Vuoi davvero eliminare questa consegna?
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Annulla</AlertDialogCancel>
+                                
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      ))}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              </React.Fragment>
+            );
+          })}
         </TableBody>
       </Table>
 
-      <Dialog open={dialogOpen} onOpenChange={chiudiDialog}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Aggiungi nuova consegna</DialogTitle>
@@ -475,11 +655,7 @@ export default function CarichiComponent() {
             e.preventDefault()
             if (caricoSelezionato === null) return
             const form = e.target as HTMLFormElement
-            const note = form.note.value
-            aggiungiConsegna(caricoSelezionato, { 
-              data: format(date, 'yyyy-MM-dd'),
-              note 
-            })
+            //const note = form.note.value
             form.reset()
           }}>
             <div className="grid gap-4 py-4">

@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 
-type OrderStatus = 'produzione' | 'consegna' | 'completato'
+type OrderStatus = 'produzione' | 'consegna' | 'completato' | 'pronto_consegna' | 'ddt'
 
 type Product = {
   id: string
@@ -243,6 +243,8 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
       case 'produzione': return 'bg-yellow-200 text-yellow-800'
       case 'consegna': return 'bg-blue-200 text-blue-800'
       case 'completato': return 'bg-green-200 text-green-800'
+      case 'pronto_consegna': return 'bg-violet-200 text-violet-800'
+      case 'ddt': return 'bg-brown-200 text-brown-800'
     }
   }
 
@@ -421,6 +423,8 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
                   <SelectItem value="produzione">Produzione</SelectItem>
                   <SelectItem value="consegna">Consegna</SelectItem>
                   <SelectItem value="completato">Completato</SelectItem>
+                  <SelectItem value="pronto_consegna">Pronto consegna</SelectItem>
+                  <SelectItem value="ddt">DDT</SelectItem>
                 </SelectContent>
               </Select>
             </div>
