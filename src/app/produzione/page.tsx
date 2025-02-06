@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Users, StickyNote, ArrowUpDown, Check } from 'lucide-react'
@@ -249,12 +249,12 @@ export default function ComponentProduction() {
       {Object.entries(ordiniRaggruppati).map(([gruppo, ordiniGruppo]) => (
         <div key={gruppo} className="mb-8">
           {tipoRaggruppamento !== 'nessuno' && (
-            <h2 className="text-xl font-semibold mb-2">
+            <h2 className="text-base mb-2">
               {tipoRaggruppamento === 'postIt' 
                 ? <>
-                    <div>{gruppo.split('|')[0]} - {ordiniGruppo[0].cliente}</div>
-                    <div className="text-base font-normal mt-1">
-                      <b>{ordiniGruppo[0].prodotto}</b> - {ordiniGruppo[0].productDimensions} - {ordiniGruppo[0].heatTreated ? 'T' : 'NON T'}
+                    <div>{gruppo.split('|')[0]} <b>{ordiniGruppo[0].cliente}</b></div>
+                    <div className="text-lg font-normal mt-1">
+                      <b>{ordiniGruppo[0].prodotto} - {ordiniGruppo[0].productDimensions} - {ordiniGruppo[0].heatTreated ? 'T' : 'NON T'}</b>
                     </div>
                   </>
                 : gruppo
@@ -262,7 +262,7 @@ export default function ComponentProduction() {
             </h2>
           )}
           <Table>
-            <TableHeader>
+            {/* <TableHeader>
               <TableRow>
                 {tipoRaggruppamento !== 'postIt' && tipoRaggruppamento !== 'cliente' && <TableHead>Cliente</TableHead>}
                 {tipoRaggruppamento !== 'postIt' && <TableHead>Prodotto</TableHead>}
@@ -271,7 +271,7 @@ export default function ComponentProduction() {
                 {tipoRaggruppamento !== 'postIt' && <TableHead>Post-it</TableHead>}
                 <TableHead>Azioni</TableHead>
               </TableRow>
-            </TableHeader>
+            </TableHeader> */}
             <TableBody>
               {ordiniGruppo.map((ordine) => (
                 <TableRow key={ordine.linkId}>

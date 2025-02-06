@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { Plus, Trash2, ChevronLeft, ChevronRight, Users } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -9,11 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
 import { OrderProducts } from './components/orderproduct'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-
-
 
 type Order = {
   id: string
@@ -22,9 +21,9 @@ type Order = {
   client_name: string 
   created_at: string
   updated_at: string | null
+  latest_delivery_date: string | null
+  is_completed: boolean
 }
-
-
 
 type Client = {
   id: string
@@ -38,6 +37,7 @@ export default function OrdersPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [totalOrders, setTotalOrders] = useState(0)
   const [currentPage, setCurrentPage] = useState(0)
+  const [isClientView, setIsClientView] = useState(false)
   
   const [showSidebar, setShowSidebar] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
@@ -53,7 +53,7 @@ export default function OrdersPage() {
 
   const fetchOrders = async () => {
     try {
-      // Prima otteniamo il conteggio totale
+      // Get total count
       const { count, error: countError } = await supabase
         .from('ordini')
         .select('*', { count: 'exact', head: true })
@@ -62,28 +62,57 @@ export default function OrdersPage() {
       if (countError) throw countError
       setTotalOrders(count || 0)
 
-      // Poi otteniamo i dati paginati con il JOIN per i nomi dei clienti
-      const { data, error } = await supabase
+      // Get orders with products data
+      const { data: ordersWithProducts, error: ordersError } = await supabase
         .from('ordini')
         .select(`
           *,
           clienti (
             ragione_sociale
+          ),
+          link_ordini_client_products (
+            body,
+            stato
           )
         `)
         .ilike('order_number', `%${searchTerm}%`)
-        .order('created_at', { ascending: false })
         .range(currentPage * ITEMS_PER_PAGE, (currentPage + 1) * ITEMS_PER_PAGE - 1)
 
-      if (error) throw error
+      if (ordersError) throw ordersError
 
-      // Trasformiamo i dati per includere il nome del cliente
-      const transformedData = data.map(order => ({
-        ...order,
-        client_name: order.clienti?.ragione_sociale || 'Cliente non trovato'
-      }))
+      // Transform and sort the data
+      const transformedData = ordersWithProducts.map(order => {
+        const products = order.link_ordini_client_products || []
+        //@ts-expect-error 123
+        const nonCompletedProducts = products.filter(p => p.stato !== 'completato')
+        
+        // Find latest delivery date from non-completed products
+        const latestDeliveryDate = nonCompletedProducts.length > 0
+        //@ts-expect-error 123
+          ? Math.max(...nonCompletedProducts.map(p => new Date(p.body.deliveryDate).getTime()))
+          : null
 
-      setOrders(transformedData)
+        // Check if all products are completed
+        //@ts-expect-error 123
+        const isCompleted = products.length > 0 && products.every(p => p.stato === 'completato')
+
+        return {
+          ...order,
+          client_name: order.clienti?.ragione_sociale || 'Cliente non trovato',
+          latest_delivery_date: latestDeliveryDate ? new Date(latestDeliveryDate).toISOString() : null,
+          is_completed: isCompleted
+        }
+      })
+
+      // Sort by latest delivery date (null dates at the end)
+      const sortedData = transformedData.sort((a, b) => {
+        if (!a.latest_delivery_date && !b.latest_delivery_date) return 0
+        if (!a.latest_delivery_date) return 1
+        if (!b.latest_delivery_date) return -1
+        return new Date(a.latest_delivery_date).getTime() - new Date(b.latest_delivery_date).getTime()
+      })
+
+      setOrders(sortedData)
     } catch (error) {
       console.error('Error fetching orders:', error)
       toast.error('Errore nel caricamento degli ordini')
@@ -112,7 +141,9 @@ export default function OrdersPage() {
       client: '',
       client_name: '',
       created_at: new Date().toISOString(),
-      updated_at: null
+      updated_at: null,
+      latest_delivery_date: null,
+      is_completed: false
     })
     setShowSidebar(true)
   }
@@ -129,21 +160,16 @@ export default function OrdersPage() {
   }
 
   const generateOrderNumber = (): string => {
-    const year = new Date().getFullYear();
-    
-    // Genera 2 lettere maiuscole casuali
+    const year = new Date().getFullYear()
     const letters = Array(3)
       .fill(0)
       .map(() => String.fromCharCode(65 + Math.floor(Math.random() * 26)))
-      .join('');
-    
-    // Genera 2 numeri casuali
+      .join('')
     const numbers = Array(3)
       .fill(0)
       .map(() => Math.floor(Math.random() * 10))
-      .join('');
-    
-    return `${year}/${letters}-${numbers}`;
+      .join('')
+    return `${year}/${letters}-${numbers}`
   }
 
   const confirmDeleteOrder = async () => {
@@ -184,7 +210,6 @@ export default function OrdersPage() {
 
         if (error) throw error
 
-        // Aggiorniamo l'ordine localmente con il nome del cliente
         const updatedOrder = {
           ...order,
           client_name: clients.find(c => c.id === order.client)?.ragione_sociale || 'Cliente non trovato'
@@ -203,13 +228,14 @@ export default function OrdersPage() {
         if (error) throw error
 
         if (data) {
-          // Aggiungiamo il nome del cliente al nuovo ordine
           const newOrder = {
             ...data[0],
-            client_name: clients.find(c => c.id === data[0].client)?.ragione_sociale || 'Cliente non trovato'
+            client_name: clients.find(c => c.id === data[0].client)?.ragione_sociale || 'Cliente non trovato',
+            latest_delivery_date: null,
+            is_completed: false
           }
           setOrders([newOrder, ...orders])
-          setCurrentOrder(newOrder);
+          setCurrentOrder(newOrder)
           toast.success('Ordine creato con successo')
         }
       }
@@ -222,6 +248,99 @@ export default function OrdersPage() {
     }
   }
 
+  const toggleClientView = () => {
+    setIsClientView(!isClientView)
+  }
+
+  // Grouped orders calculation using useMemo
+  const groupedOrders = useMemo(() => {
+    if (!isClientView) return null;
+    
+    return orders.reduce((acc, order) => {
+      if (!acc[order.client_name]) {
+        acc[order.client_name] = [];
+      }
+      acc[order.client_name].push(order);
+      return acc;
+    }, {} as Record<string, Order[]>);
+  }, [orders, isClientView]);
+
+  const renderOrders = () => {
+    if (!isClientView) {
+      return orders.map((order) => (
+        <TableRow 
+          key={order.id} 
+          className="cursor-pointer transition-colors hover:bg-black hover:text-white group"
+          onClick={() => handleEditOrder(order)}
+        >
+          <TableCell>{order.order_number}</TableCell>
+          <TableCell>{order.client_name}</TableCell>
+          <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+          <TableCell>
+            {order.latest_delivery_date 
+              ? new Date(order.latest_delivery_date).toLocaleDateString()
+              : '-'}
+          </TableCell>
+          <TableCell className="flex gap-2 items-center justify-start min-w-40">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => handleDeleteOrder(order, e)}
+            >
+              <Trash2 className="h-4 w-4 text-black group-hover:text-white hover:text-black" />
+            </Button>
+            {order.is_completed && (
+              <Badge className="bg-green-200 text-green-800">
+                evaso!
+              </Badge>
+            )}
+          </TableCell>
+        </TableRow>
+      ));
+    }
+
+    // Vista raggruppata per cliente
+    return groupedOrders ? Object.entries(groupedOrders).map(([clientName, clientOrders], groupIndex) => (
+      <React.Fragment key={`group-${groupIndex}`}>
+        <TableRow className="bg-gray-100">
+          <TableCell colSpan={5} className="font-bold">
+            {clientName} ({clientOrders.length} ordini)
+          </TableCell>
+        </TableRow>
+        {clientOrders.map((order) => (
+          <TableRow 
+            key={order.id}
+            className="cursor-pointer transition-colors hover:bg-black hover:text-white group"
+            onClick={() => handleEditOrder(order)}
+          >
+            <TableCell>{order.order_number}</TableCell>
+            <TableCell></TableCell>
+            <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+            <TableCell>
+              {order.latest_delivery_date 
+                ? new Date(order.latest_delivery_date).toLocaleDateString()
+                : '-'}
+            </TableCell>
+            <TableCell className="flex gap-2 items-center justify-start min-w-40">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => handleDeleteOrder(order, e)}
+              >
+                <Trash2 className="h-4 w-4 text-black group-hover:text-white hover:text-black" />
+              </Button>
+              {order.is_completed && (
+                <Badge className="bg-green-200 text-green-800">
+                  evaso!
+                </Badge>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </React.Fragment>
+    )) : null;
+  };
+
   const totalPages = Math.ceil(totalOrders / ITEMS_PER_PAGE)
 
   return (
@@ -229,18 +348,23 @@ export default function OrdersPage() {
       <div className="container mx-auto p-4">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-bold">Gestione Ordini</h1>
-          <Button onClick={handleAddOrder}>
-            <Plus className="mr-2 h-4 w-4" /> Nuovo Ordine
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={toggleClientView} variant={isClientView ? "secondary" : "outline"}>
+              <Users className="mr-2 h-4 w-4" /> Clienti
+            </Button>
+            <Button onClick={handleAddOrder}>
+              <Plus className="mr-2 h-4 w-4" /> Nuovo Ordine
+            </Button>
+          </div>
         </div>
         
         <div className="flex gap-4 mb-4">
           <Input
-            placeholder="Cerca per numero ordine..."
+            placeholder="Cerca ordine..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value)
-              setCurrentPage(0) // Reset alla prima pagina quando si cerca
+              setCurrentPage(0)
             }}
             className="max-w-md"
           />
@@ -252,34 +376,15 @@ export default function OrdersPage() {
               <TableHead>Ordine</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Data Inserimento</TableHead>
+              <TableHead>Data Consegna</TableHead>
               <TableHead className="w-[100px]">Azioni</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orders.map((order) => (
-              <TableRow 
-                key={order.id} 
-                className="cursor-pointer transition-colors hover:bg-black hover:text-white group"
-                onClick={() => handleEditOrder(order)}
-              >
-                <TableCell className="rounded-l-lg">{order.order_number}</TableCell>
-                <TableCell>{order.client_name}</TableCell>
-                <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
-                <TableCell className="rounded-r-lg">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => handleDeleteOrder(order, e)}
-                  >
-                    <Trash2 className="h-4 w-4 text-black group-hover:text-white hover:text-black" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {renderOrders()}
           </TableBody>
         </Table>
 
-        {/* Paginazione */}
         <div className="flex items-center justify-between mt-4">
           <div className="text-sm text-gray-500">
             {orders.length} ordini
@@ -310,8 +415,13 @@ export default function OrdersPage() {
         <Sheet open={showSidebar} onOpenChange={setShowSidebar}>
           <SheetContent side="right" className="w-4/5 min-w-[80%]">
             <SheetHeader>
-              <SheetTitle>
+              <SheetTitle className="flex items-center gap-4">
                 {currentOrder?.id ? `Modifica Ordine ${currentOrder.order_number}` : 'Nuovo Ordine'}
+                {currentOrder?.is_completed && (
+                  <Badge className="bg-green-200 text-green-800">
+                    Ordine Evaso!
+                  </Badge>
+                )}
               </SheetTitle>
               <div className="flex justify-end gap-4 mt-6">
                 <Button variant="outline" onClick={() => setShowSidebar(false)}>
@@ -367,7 +477,7 @@ export default function OrdersPage() {
               </div>
             </div>
             
-            <OrderProducts orderId={currentOrder?.id || ''} clientId={currentOrder?.client || ''} />
+            <OrderProducts orderId={currentOrder?.id || ''} clientId={currentOrder?.client || ''} onUpdate={fetchOrders} />
             
           </SheetContent>
         </Sheet>
@@ -377,7 +487,7 @@ export default function OrdersPage() {
             <DialogHeader>
               <DialogTitle>Conferma Eliminazione</DialogTitle>
               <DialogDescription>
-                Vuoi davvero eliminare l`&apos;`ordine {orderToDelete?.order_number}? Questa azione è irreversibile.
+                Vuoi davvero eliminare l&apos;ordine {orderToDelete?.order_number}? Questa azione è irreversibile.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -395,6 +505,6 @@ export default function OrdersPage() {
           </DialogContent>
         </Dialog>
       </div>
-      </TooltipProvider>
+    </TooltipProvider>
   )
 }

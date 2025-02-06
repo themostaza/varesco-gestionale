@@ -26,14 +26,16 @@ type OrderProduct = {
   deliveryDate: string
   status: OrderStatus
   product: Product
+  codice_raggruppamento: string | null
 }
 
 type OrderProductsProps = {
   orderId: string
-  clientId: string // Added to fetch client-specific products
+  clientId: string
+  onUpdate?: () => void
 }
 
-export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
+export function OrderProducts({ orderId, clientId, onUpdate }: OrderProductsProps) {
   const [orderProducts, setOrderProducts] = useState<OrderProduct[]>([])
   const [availableProducts, setAvailableProducts] = useState<Product[]>([])
   const [showDialog, setShowDialog] = useState(false)
@@ -62,6 +64,7 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
           id,
           c_product_id,
           body,
+          codice_raggruppamento,
           stato,
           client_products (
             id,
@@ -70,9 +73,6 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
           )
         `)
         .eq('order_id', orderId)
-
-        //console.log('Data from Supabase:', JSON.stringify(data?.[0], null, 2))
-
 
       if (error) throw error
 
@@ -84,6 +84,7 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
           deliveryDate: string;
         };
         stato: string;
+        codice_raggruppamento: string | null;
         client_products: {
           id: number;
           name: string;
@@ -95,20 +96,21 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
       }
 
       const transformedData = ((data || []) as unknown as OrderProductResponse[])
-  .filter(item => item && item.client_products)
-  .map(item => ({
-    id: item.id.toString(),
-    productId: item.c_product_id.toString(),
-    quantity: item.body?.quantity || 0,
-    deliveryDate: item.body?.deliveryDate || new Date().toISOString().split('T')[0],
-    status: (item.stato as OrderStatus) || 'produzione',
-    product: {
-      id: item.client_products.id.toString(),
-      name: item.client_products.name,
-      dimensions: item.client_products.body?.dimensions || '',
-      heat_treated: item.client_products.body?.heatTreated || false
-    }
-  }))
+        .filter(item => item && item.client_products)
+        .map(item => ({
+          id: item.id.toString(),
+          productId: item.c_product_id.toString(),
+          quantity: item.body?.quantity || 0,
+          deliveryDate: item.body?.deliveryDate || new Date().toISOString().split('T')[0],
+          status: (item.stato as OrderStatus) || 'produzione',
+          codice_raggruppamento: item.codice_raggruppamento,
+          product: {
+            id: item.client_products.id.toString(),
+            name: item.client_products.name,
+            dimensions: item.client_products.body?.dimensions || '',
+            heat_treated: item.client_products.body?.heatTreated || false
+          }
+        }))
 
       setOrderProducts(transformedData)
     } catch (error) {
@@ -123,7 +125,7 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
         .from('client_products')
         .select('*')
         .eq('client', clientId)
-      //console.log(data)
+
       if (error) throw error
 
       const transformedProducts = data.map(item => ({
@@ -177,7 +179,8 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
 
       setShowDialog(false)
       setCurrentOrderProduct(null)
-      fetchOrderProducts()
+      await fetchOrderProducts()
+      if (onUpdate) onUpdate()
     } catch (error) {
       console.error('Error saving product:', error)
       toast.error('Errore durante il salvataggio del prodotto')
@@ -206,7 +209,8 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
       if (error) throw error
       
       toast.success('Prodotto duplicato con successo')
-      fetchOrderProducts()
+      await fetchOrderProducts()
+      if (onUpdate) onUpdate()
     } catch (error) {
       console.error('Error duplicating product:', error)
       toast.error('Errore durante la duplicazione del prodotto')
@@ -229,7 +233,8 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
 
       toast.success('Prodotto eliminato con successo')
       setShowDeleteConfirmation(false)
-      fetchOrderProducts()
+      await fetchOrderProducts()
+      if (onUpdate) onUpdate()
     } catch (error) {
       console.error('Error deleting product:', error)
       toast.error('Errore durante l\'eliminazione del prodotto')
@@ -242,9 +247,9 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
     switch (status) {
       case 'produzione': return 'bg-yellow-200 text-yellow-800'
       case 'consegna': return 'bg-blue-200 text-blue-800'
-      case 'completato': return 'bg-green-200 text-green-800'
       case 'pronto_consegna': return 'bg-violet-200 text-violet-800'
       case 'ddt': return 'bg-brown-200 text-brown-800'
+      case 'completato': return 'bg-green-200 text-green-800'
     }
   }
 
@@ -263,6 +268,7 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
             quantity: 1,
             deliveryDate: new Date().toISOString().split('T')[0],
             status: 'produzione',
+            codice_raggruppamento: null,
             product: availableProducts[0]
           })
           setShowDialog(true)
@@ -287,7 +293,7 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
                     <AlertCircle className="h-4 w-4 text-red-500 hover:text-red-600" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs rounded-md">
-                    Attenzione: modificare il campo Stato modifica la posizione di un ordine tra le schermate Produzione e Carichi.
+                    ATTENZIONE AI PRODOTTI RAGGRUPPATI! MODIFICARE DA QUI LO STATO DISACCOPPIERà IL RAGGRUPPAMENTO!
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -311,9 +317,16 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
               <TableCell>{orderProduct.quantity}</TableCell>
               <TableCell>{new Date(orderProduct.deliveryDate).toLocaleDateString()}</TableCell>
               <TableCell>
-                <Badge className={getStatusBadgeColor(orderProduct.status)}>
-                  {orderProduct.status.charAt(0).toUpperCase() + orderProduct.status.slice(1)}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge className={getStatusBadgeColor(orderProduct.status)}>
+                    {orderProduct.status.charAt(0).toUpperCase() + orderProduct.status.slice(1)}
+                  </Badge>
+                  {orderProduct.codice_raggruppamento && (
+                    <Badge className="bg-red-200 text-red-800">
+                      Raggruppato!
+                    </Badge>
+                  )}
+                </div>
               </TableCell>
               <TableCell className="rounded-r-lg">
                 <div className="flex gap-2" onClick={e => e.stopPropagation()}>
@@ -408,7 +421,7 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm">Stato</label>
+            <label className="text-sm">Stato</label>
               <Select 
                 value={currentOrderProduct?.status}
                 onValueChange={(value: OrderStatus) => currentOrderProduct && setCurrentOrderProduct({
@@ -422,9 +435,9 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
                 <SelectContent>
                   <SelectItem value="produzione">Produzione</SelectItem>
                   <SelectItem value="consegna">Consegna</SelectItem>
-                  <SelectItem value="completato">Completato</SelectItem>
                   <SelectItem value="pronto_consegna">Pronto consegna</SelectItem>
                   <SelectItem value="ddt">DDT</SelectItem>
+                  <SelectItem value="completato">Completato</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -446,7 +459,7 @@ export function OrderProducts({ orderId, clientId }: OrderProductsProps) {
           <DialogHeader>
             <DialogTitle>Conferma Eliminazione</DialogTitle>
             <DialogDescription>
-            Vuoi davvero eliminare questo prodotto dall&apos;ordine? Questa azione è irreversibile.
+              Vuoi davvero eliminare questo prodotto dall&apos;ordine? Questa azione è irreversibile.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
