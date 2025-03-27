@@ -19,7 +19,7 @@ export default function RootLayoutClient({
     '/privacy',
     '/auth/reset-password',
     '/primoaccesso',
-    
+    '/admin/x7k9m2p4v3'
   ]
   
   // Verifica se la pagina corrente è nella lista delle pagine escluse

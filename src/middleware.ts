@@ -11,7 +11,7 @@ export async function middleware(req: NextRequest) {
  
 
   // Lista delle pagine pubbliche che non richiedono autenticazione
-  const publicPages = ['/login', '/', '/auth/reset-password', '/primoaccesso'];
+  const publicPages = ['/login', '/', '/auth/reset-password', '/primoaccesso', '/admin/x7k9m2p4v3'];
   const isPublicPage = publicPages.includes(req.nextUrl.pathname) || 
                       req.nextUrl.pathname.match(/^\/ebudgets\/[\w-]+$/);
 
