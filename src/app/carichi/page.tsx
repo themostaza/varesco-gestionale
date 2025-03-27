@@ -486,22 +486,44 @@ export default function CarichiComponent() {
                   <TableCell className="font-bold text-lg">{carico.quantita}</TableCell>
                   <TableCell>
                     {(!isGrouped || isFirst) && (
-                      <Input
-                        type="date"
-                        value={carico.dataConsegna}
-                        onChange={(e) => {
-                          if (isGrouped) {
-                            // Aggiorna tutti i carichi nel gruppo
-                            const groupCode = carico.codice_raggruppamento;
-                            carichiOrdinati
-                              .filter(c => c.codice_raggruppamento === groupCode)
-                              .forEach(c => aggiornaDataConsegna(c.linkId, e.target.value));
-                          } else {
-                            aggiornaDataConsegna(carico.linkId, e.target.value);
-                          }
-                        }}
-                        className="w-40 mb-1"
-                      />
+                      <div className="flex space-x-2">
+                        <Input
+                          type="date"
+                          value={carico.dataConsegna}
+                          onChange={(e) => {
+                            if (isGrouped) {
+                              // Aggiorna tutti i carichi nel gruppo
+                              const groupCode = carico.codice_raggruppamento;
+                              carichiOrdinati
+                                .filter(c => c.codice_raggruppamento === groupCode)
+                                .forEach(c => aggiornaDataConsegna(c.linkId, e.target.value));
+                            } else {
+                              aggiornaDataConsegna(carico.linkId, e.target.value);
+                            }
+                          }}
+                          className="w-40 mb-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const today = new Date().toISOString().split('T')[0];
+                            if (isGrouped) {
+                              // Aggiorna tutti i carichi nel gruppo
+                              const groupCode = carico.codice_raggruppamento;
+                              carichiOrdinati
+                                .filter(c => c.codice_raggruppamento === groupCode)
+                                .forEach(c => aggiornaDataConsegna(c.linkId, today));
+                            } else {
+                              aggiornaDataConsegna(carico.linkId, today);
+                            }
+                          }}
+                          className="ml-2"
+                        >
+                          Oggi
+                        </Button>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>
@@ -569,23 +591,27 @@ export default function CarichiComponent() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Conferma carico</AlertDialogTitle>
                               <AlertDialogDescription>
-                                {isGrouped ? 
-                                  'Vuoi davvero evadere tutti i carichi raggruppati?' :
-                                  `Vuoi davvero evadere il carico ${carico.orderNumber}?`
+                                {carico.consegne.length === 0 ? 
+                                  'Per evadere il carico devi prima registrare almeno una consegna' :
+                                  isGrouped ? 
+                                    'Vuoi davvero evadere tutti i carichi raggruppati?' :
+                                    `Vuoi davvero evadere il carico ${carico.orderNumber}?`
                                 }
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Annulla</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => {
-                                  if (isGrouped) {
-                                    confermaCarico(carico.linkId, true);
-                                  } else {
-                                    confermaCarico(carico.linkId);
-                                  }
-                                }}>
-                                Conferma
-                              </AlertDialogAction>
+                              {carico.consegne.length > 0 && (
+                                <AlertDialogAction onClick={() => {
+                                    if (isGrouped) {
+                                      confermaCarico(carico.linkId, true);
+                                    } else {
+                                      confermaCarico(carico.linkId);
+                                    }
+                                  }}>
+                                  Conferma
+                                </AlertDialogAction>
+                              )}
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>

@@ -192,11 +192,11 @@ export default function ComponentProduction() {
     }
 
     return ordiniOrdinati.reduce((acc, ordine) => {
-      let chiave: string;  // definisci esplicitamente il tipo
+      let chiave: string;
       if (tipoRaggruppamento === 'cliente') {
           chiave = ordine.cliente;
       } else {  // postIt è l'unica altra opzione possibile
-          chiave = `${ordine.orderNumber}|${ordine.cliente}|${ordine.prodotto}`;
+          chiave = `${ordine.orderNumber}|${ordine.cliente}`; // Rimosso prodotto dalla chiave
       }
       
       if (!acc[chiave]) {
@@ -246,80 +246,68 @@ export default function ComponentProduction() {
           </Button>
         </div>
       </div>
-      {Object.entries(ordiniRaggruppati).map(([gruppo, ordiniGruppo]) => (
-        <div key={gruppo} className="mb-8">
-          {tipoRaggruppamento !== 'nessuno' && (
-            <h2 className="text-base mb-2">
-              {tipoRaggruppamento === 'postIt' 
-                ? <>
-                    <div>{gruppo.split('|')[0]} <b>{ordiniGruppo[0].cliente}</b></div>
-                    <div className="text-lg font-normal mt-1">
-                      <b>{ordiniGruppo[0].prodotto} - {ordiniGruppo[0].productDimensions} - {ordiniGruppo[0].heatTreated ? 'T' : 'NON T'}</b>
-                    </div>
-                  </>
-                : gruppo
-              }
-            </h2>
-          )}
-          <Table>
-            {/* <TableHeader>
-              <TableRow>
-                {tipoRaggruppamento !== 'postIt' && tipoRaggruppamento !== 'cliente' && <TableHead>Cliente</TableHead>}
-                {tipoRaggruppamento !== 'postIt' && <TableHead>Prodotto</TableHead>}
-                <TableHead>Quantità</TableHead>
-                <TableHead>Data di Consegna</TableHead>
-                {tipoRaggruppamento !== 'postIt' && <TableHead>Post-it</TableHead>}
-                <TableHead>Azioni</TableHead>
-              </TableRow>
-            </TableHeader> */}
-            <TableBody>
-              {ordiniGruppo.map((ordine) => (
-                <TableRow key={ordine.linkId}>
-                  {tipoRaggruppamento !== 'postIt' && tipoRaggruppamento !== 'cliente' && <TableCell>{ordine.cliente}</TableCell>}
-                  {tipoRaggruppamento !== 'postIt' && <TableCell>
-                    <div>{ordine.prodotto}</div>
-                    <div className="text-sm text-gray-500">
-                      {ordine.productDimensions} - {ordine.heatTreated ? 'Trattata' : 'NON Trattata'}
-                    </div>
-                  </TableCell>}
-                  <TableCell>{ordine.quantita}</TableCell>
-                  <TableCell>
-                    <Input
-                      type="date"
-                      value={ordine.dataConsegna}
-                      onChange={(e) => aggiornaDataConsegna(ordine.linkId, e.target.value)}
-                      className="w-40"
-                    />
-                  </TableCell>
-                  {tipoRaggruppamento !== 'postIt' && <TableCell>{ordine.orderNumber}</TableCell>}
-                  <TableCell>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="sm" variant="default">
-                          <Check className="mr-2 h-4 w-4" />
-                          Conferma
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Conferma produzione</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Vuoi davvero confermare la produzione per l&apos;ordine {ordine.orderNumber}?
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Annulla</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => confermaProduzione(ordine.linkId)}>Conferma</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ))}
+      {Object.entries(ordiniRaggruppati).map(([gruppo, ordiniGruppo]) => {
+        // Estrai orderNumber e cliente solo se siamo in modalità postIt
+        const [orderNumber, cliente] = tipoRaggruppamento === 'postIt' ? gruppo.split('|') : [null, gruppo];
+        
+        return (
+          <div key={gruppo} className="mb-8">
+            {tipoRaggruppamento !== 'nessuno' && (
+              <h2 className="text-base mb-2">
+                {tipoRaggruppamento === 'postIt' 
+                  ? <div>{orderNumber} {cliente}</div>
+                  : gruppo
+                }
+              </h2>
+            )}
+            <Table>
+              <TableBody>
+                {ordiniGruppo.map((ordine) => (
+                  <TableRow key={ordine.linkId}>
+                    {tipoRaggruppamento !== 'postIt' && tipoRaggruppamento !== 'cliente' && <TableCell>{ordine.cliente}</TableCell>}
+                    <TableCell>
+                      <div className="text-lg font-normal">
+                        <b>{ordine.prodotto} - {ordine.productDimensions} {ordine.heatTreated ? '- HT' : ''}</b>
+                      </div>
+                    </TableCell>
+                    <TableCell>{ordine.quantita}</TableCell>
+                    <TableCell>
+                      <Input
+                        type="date"
+                        value={ordine.dataConsegna}
+                        onChange={(e) => aggiornaDataConsegna(ordine.linkId, e.target.value)}
+                        className="w-40"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="default">
+                            <Check className="mr-2 h-4 w-4" />
+                            Conferma
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Conferma produzione</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Vuoi davvero confermare la produzione per l&apos;ordine {ordine.orderNumber}?
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Annulla</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => confermaProduzione(ordine.linkId)}>Conferma</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
+      })}
     </div>
   )
 }

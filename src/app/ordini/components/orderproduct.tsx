@@ -409,15 +409,27 @@ export function OrderProducts({ orderId, clientId, onUpdate }: OrderProductsProp
 
             <div className="space-y-2">
               <label htmlFor="deliveryDate" className="text-sm">Data Consegna</label>
-              <Input
-                id="deliveryDate"
-                type="date"
-                value={currentOrderProduct?.deliveryDate || ''}
-                onChange={(e) => currentOrderProduct && setCurrentOrderProduct({
-                  ...currentOrderProduct,
-                  deliveryDate: e.target.value
-                })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="deliveryDate"
+                  type="date"
+                  value={currentOrderProduct?.deliveryDate || ''}
+                  onChange={(e) => currentOrderProduct && setCurrentOrderProduct({
+                    ...currentOrderProduct,
+                    deliveryDate: e.target.value
+                  })}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => currentOrderProduct && setCurrentOrderProduct({
+                    ...currentOrderProduct,
+                    deliveryDate: new Date().toISOString().split('T')[0]
+                  })}
+                >
+                  Oggi
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">

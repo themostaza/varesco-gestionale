@@ -23,6 +23,7 @@ type Order = {
   updated_at: string | null
   latest_delivery_date: string | null
   is_completed: boolean
+  data_inserimento_ordine: string
 }
 
 type Client = {
@@ -143,7 +144,8 @@ export default function OrdersPage() {
       created_at: new Date().toISOString(),
       updated_at: null,
       latest_delivery_date: null,
-      is_completed: false
+      is_completed: false,
+      data_inserimento_ordine: new Date().toISOString()
     })
     setShowSidebar(true)
   }
@@ -204,6 +206,7 @@ export default function OrdersPage() {
           .update({
             client: order.client,
             order_number: order.order_number,
+            data_inserimento_ordine: order.data_inserimento_ordine,
             updated_at: new Date().toISOString()
           })
           .eq('id', order.id)
@@ -222,6 +225,7 @@ export default function OrdersPage() {
           .insert([{
             client: order.client,
             order_number: order.order_number,
+            data_inserimento_ordine: order.data_inserimento_ordine
           }])
           .select()
 
@@ -275,7 +279,7 @@ export default function OrdersPage() {
         >
           <TableCell>{order.order_number}</TableCell>
           <TableCell>{order.client_name}</TableCell>
-          <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+          <TableCell>{new Date(order.data_inserimento_ordine).toLocaleDateString()}</TableCell>
           <TableCell>
             {order.latest_delivery_date 
               ? new Date(order.latest_delivery_date).toLocaleDateString()
@@ -315,7 +319,7 @@ export default function OrdersPage() {
           >
             <TableCell>{order.order_number}</TableCell>
             <TableCell></TableCell>
-            <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+            <TableCell>{new Date(order.data_inserimento_ordine).toLocaleDateString()}</TableCell>
             <TableCell>
               {order.latest_delivery_date 
                 ? new Date(order.latest_delivery_date).toLocaleDateString()
@@ -468,12 +472,23 @@ export default function OrdersPage() {
 
               <div className="space-y-2">
                 <label htmlFor="dateInserted" className="text-sm">Data Inserimento</label>
-                <Input
-                  id="dateInserted"
-                  type="date"
-                  value={currentOrder?.created_at.split('T')[0] || ''}
-                  disabled
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="dateInserted"
+                    type="date"
+                    value={currentOrder?.data_inserimento_ordine ? new Date(currentOrder.data_inserimento_ordine).toISOString().split('T')[0] : ''}
+                    onChange={(e) => setCurrentOrder(currentOrder ? 
+                      { ...currentOrder, data_inserimento_ordine: new Date(e.target.value).toISOString() } : null)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCurrentOrder(currentOrder ? 
+                      { ...currentOrder, data_inserimento_ordine: new Date().toISOString() } : null)}
+                  >
+                    Oggi
+                  </Button>
+                </div>
               </div>
             </div>
             
