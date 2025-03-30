@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Clock, KeyRound } from 'lucide-react'
+import { Plus, Trash2, Clock, KeyRound, HelpCircle, LayoutDashboard, Users, Building2, ClipboardList, Factory, Truck, ArrowsUpFromLine, PrinterCheck, Check } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -14,7 +14,7 @@ type User = {
   id: string
   name: string
   email: string | undefined
-  role: 'admin' | 'collaboratore'
+  role: 'admin' | 'collaboratore' | 'operatore'
   registration_status?: 'pending' | 'active'
   otp?: string
   otp_expires_at?: string
@@ -29,11 +29,34 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [showResetConfirmation, setShowResetConfirmation] = useState(false)
   const [userToReset, setUserToReset] = useState<User | null>(null)
+  const [showPermissionsDialog, setShowPermissionsDialog] = useState(false)
   
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [userToDelete, setUserToDelete] = useState<User | null>(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [userToEdit, setUserToEdit] = useState<User | null>(null)
+
+  const permissionsMap = {
+    admin: [
+      { name: 'Dashboard', icon: LayoutDashboard },
+      { name: 'Utenti', icon: Users },
+      { name: 'Clienti', icon: Building2 },
+      { name: 'Ordini', icon: ClipboardList },
+      { name: 'Produzione', icon: Factory },
+      { name: 'Carichi', icon: Truck },
+      { name: 'Carichi del giorno', icon: ArrowsUpFromLine },
+      { name: 'DDT', icon: PrinterCheck }
+    ],
+    collaboratore: [
+      { name: 'Produzione', icon: Factory },
+      { name: 'Carichi', icon: Truck },
+      { name: 'Carichi del giorno', icon: ArrowsUpFromLine }
+    ],
+    operatore: [
+      { name: 'Produzione', icon: Factory },
+      { name: 'Carichi del giorno', icon: ArrowsUpFromLine }
+    ]
+  }
 
   useEffect(() => {
     fetchUsers()
@@ -193,9 +216,14 @@ export default function UsersPage() {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Gestione Utenti</h1>
-        <Button onClick={() => setShowAddDialog(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Aggiungi Utente
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowPermissionsDialog(true)}>
+            <HelpCircle className="mr-2 h-4 w-4" /> Permessi
+          </Button>
+          <Button onClick={() => setShowAddDialog(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Aggiungi Utente
+          </Button>
+        </div>
       </div>
       
       <Table>
@@ -223,6 +251,12 @@ export default function UsersPage() {
                   <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
                     <Clock className="mr-1 h-3 w-3" />
                     Pending
+                  </Badge>
+                )}
+                {user.registration_status === 'active' && (
+                  <Badge variant="outline" className="bg-green-100 text-green-800">
+                    <Check className="mr-1 h-3 w-3" />
+                    Attivo
                   </Badge>
                 )}
               </TableCell>
@@ -305,6 +339,7 @@ export default function UsersPage() {
                   <SelectContent>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="collaboratore">Collaboratore</SelectItem>
+                    <SelectItem value="operatore">Operatore</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -391,7 +426,7 @@ export default function UsersPage() {
               </label>
               <Select
                 value={userToEdit?.role}
-                onValueChange={(value) => setUserToEdit(userToEdit ? { ...userToEdit, role: value as 'admin' | 'collaboratore' } : null)}
+                onValueChange={(value) => setUserToEdit(userToEdit ? { ...userToEdit, role: value as 'admin' | 'collaboratore' | 'operatore' } : null)}
                 disabled={currentUser === userToEdit?.id}
               >
                 <SelectTrigger className="col-span-3">
@@ -400,6 +435,7 @@ export default function UsersPage() {
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="collaboratore">Collaboratore</SelectItem>
+                  <SelectItem value="operatore">Operatore</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -425,6 +461,32 @@ export default function UsersPage() {
             <Button variant="outline" onClick={() => setShowResetConfirmation(false)}>Annulla</Button>
             <Button variant="destructive" onClick={confirmResetPassword}>Reset Password</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPermissionsDialog} onOpenChange={setShowPermissionsDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mappa dei Permessi</DialogTitle>
+            <DialogDescription>
+              Visualizza le pagine accessibili per ogni ruolo utente
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            {Object.entries(permissionsMap).map(([role, permissions]) => (
+              <div key={role} className="border rounded-lg p-4">
+                <h3 className="font-semibold mb-2 capitalize">{role}</h3>
+                <div className="space-y-2">
+                  {permissions.map((permission) => (
+                    <div key={permission.name} className="flex items-center gap-2">
+                      <permission.icon className="h-4 w-4" />
+                      <span className="text-sm">{permission.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

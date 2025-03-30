@@ -35,7 +35,13 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }: SidebarProps) => {
 
   const collaboratorNavItems: NavItem[] = [
     { name: 'Produzione', icon: Factory, href: '/produzione' },
-    { name: 'Carichi', icon: Truck, href: '/carichi' }
+    { name: 'Carichi', icon: Truck, href: '/carichi' },
+    { name: 'Carichi del giorno', icon: ArrowsUpFromLine, href: '/carichidelgiorno' }
+  ];
+
+  const operatorNavItems: NavItem[] = [
+    { name: 'Produzione', icon: Factory, href: '/produzione' },
+    { name: 'Carichi del giorno', icon: ArrowsUpFromLine, href: '/carichidelgiorno' }
   ];
 
   const [mounted, setMounted] = useState(false);
@@ -58,6 +64,8 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }: SidebarProps) => {
         // Set visible navigation items based on role
         if (role === 'collaboratore') {
           setVisibleNavItems(collaboratorNavItems);
+        } else if (role === 'operatore') {
+          setVisibleNavItems(operatorNavItems);
         } else {
           setVisibleNavItems(allNavItems);
         }

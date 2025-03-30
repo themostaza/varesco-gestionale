@@ -66,8 +66,10 @@ const AuthPage = () => {
   
       toast.success("Accesso effettuato con successo!");
       
-      // Reindirizza in base al ruolo
+      // Reindirizza alla prima pagina disponibile in base al ruolo
       if (userRole === "collaboratore") {
+        router.push("/produzione");
+      } else if (userRole === "operatore") {
         router.push("/produzione");
       } else {
         router.push("/dashboard");
