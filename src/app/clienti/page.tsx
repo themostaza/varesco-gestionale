@@ -209,7 +209,7 @@ export default function CustomersPage() {
 
       <Sheet open={showSidebar} onOpenChange={setShowSidebar}>
         <SheetContent side="right" className="w-4/5 min-w-[80%] overflow-y-auto">
-          <SheetHeader className="sticky top-0 bg-white z-10 pb-4">
+          <SheetHeader className="pb-4">
             <SheetTitle>
               {currentCustomer?.id ? currentCustomer?.ragione_sociale : 'Nuovo Cliente'}
             </SheetTitle>

@@ -417,8 +417,8 @@ export default function OrdersPage() {
         </div>
 
         <Sheet open={showSidebar} onOpenChange={setShowSidebar}>
-          <SheetContent side="right" className="w-4/5 min-w-[80%]">
-            <SheetHeader>
+          <SheetContent side="right" className="w-4/5 min-w-[80%] overflow-y-auto">
+            <SheetHeader className="pb-4">
               <SheetTitle className="flex items-center gap-4">
                 {currentOrder?.id ? `Modifica Ordine ${currentOrder.order_number}` : 'Nuovo Ordine'}
                 {currentOrder?.is_completed && (
